@@ -10,14 +10,14 @@ import (
 	"driftdetector/internal/driftcheck"
 	"driftdetector/internal/driftcheck/report"
 	"driftdetector/internal/models"
-	aws2 "driftdetector/internal/providers/aws"
+	aws "driftdetector/internal/providers/aws"
 	"driftdetector/internal/terraform"
 )
 
 // Service orchestrates the drift detection process.
 type Service struct {
 	config          Config
-	awsSrv          aws2.InstanceServiceAPI
+	awsSrv          aws.InstanceServiceAPI
 	terraformParser terraform.IProvider
 	reportPrinter   report.IPrinter
 }
@@ -25,7 +25,7 @@ type Service struct {
 // NewService creates a new orchestrator service with the given configuration.
 func NewService(
 	config Config,
-	awsSrv aws2.InstanceServiceAPI,
+	awsSrv aws.InstanceServiceAPI,
 	terraformParser terraform.IProvider,
 	reportPrinter report.IPrinter,
 ) *Service {
@@ -40,7 +40,7 @@ func NewService(
 // NewDefaultService creates a new service with default implementations of dependencies
 func NewDefaultService(config Config) (*Service, error) {
 	// Create AWS instance service
-	awsService, err := aws2.NewInstanceServiceWithDefaultConfig(context.Background())
+	awsService, err := aws.NewInstanceServiceWithDefaultConfig(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize AWS service: %w", err)
 	}

@@ -7,7 +7,8 @@ This Go application detects configuration drift between AWS EC2 instances and th
 ## Setup and Installation
 
 - Ensure Go 1.19+ is installed: [https://go.dev/doc/install](https://go.dev/doc/install)
-- Configure AWS credentials (e.g., via environment variables `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, or shared credentials file `~/.aws/credentials`): [https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configure-gosdk.html](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configure-gosdk.html)
+- Configure AWS credentials (e.g., via environment variables `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, or shared credentials file `~/.aws/credentials`): [https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configure-gosdk.html](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configure-gosdk.html),
+`aws configure` command can also be used to set up credentials.
 - Clone the repository: `git clone <repository-url>` (Replace `<repository-url>` with the actual URL once available)
 - Navigate to the project directory: `cd driftdetector`
 - Build the application: `go build ./cmd/driftdetector`
@@ -123,10 +124,6 @@ The drift detector follows these key principles:
 
 2. **AWS API Limitations**: AWS API has rate limits that can be hit when checking many instances. My solution was to implement concurrency controls to limit the number of simultaneous API calls. 
 > However i discovered the the AWs describe support bulk-actions, but i've choosen not to unitlize this to keep things simple although i know actually implementing it will not bring too much complexities, but i choose this simple solution (Depending on the final usecase for this project and if we see that there is need to check a large number of instances, then i think going for the bulk-action can have a compeling benefit)
-
-
-
-
 
 ## Sample Data
 
