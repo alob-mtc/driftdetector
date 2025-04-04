@@ -138,6 +138,6 @@ The drift detector follows these key principles:
 - Improved error handling with retry logic for AWS API calls.
 - Support for comparing other AWS resources beyond EC2 instances (e.g., Security Groups, IAM Roles, S3 Buckets).
 - Instance filtering by tags or other criteria for bulk checks.
-- Deifining custom error type is one idea that can be explored here, this will give a lot more robustness on the error handling a reporting side.
+- Defining custom error type is one idea that can be explored here, this will give a lot more robustness on the error handling a reporting side.
 - Leveraging AWs describe support for bulk-actions, use this to bulk-fetch the instance as oppose to getting this 1 by 1 like i do not (there's not significant draw back to my current approach) how ever if the uses case is to expore a large set of ec2 instances, then bulk-actions is definatly the way to go here.
 - Leverage the use of enums for keeping the attribute much more consistent 
