@@ -85,11 +85,18 @@ go generate ./...
 The drift detector follows these key principles:
 
 1. **Modularity**: The codebase is organized into dedicated packages with clear responsibilities:
-   - `aws`: Handles AWS API interactions to fetch instance details
-   - `terraform`: Parses HCL configuration files
-   - `driftcheck`: Implements drift detection logic
-   - `orchestrator`: Coordinates the workflow between components
-   - `models`: Defines shared data structures
+
+   cmd:
+   - `cmd/driftdetector`: Contains the main CLI entry point and command-line argument parsing
+   
+   internal:
+   - `/providers`: Contains provider implementations:
+     - `/providers/aws`: Handles AWS API interactions to fetch instance details
+   - `/terraform`: Parses HCL configuration files
+   - `/driftcheck`: Implements drift detection logic and reporting
+   - `/orchestrator`: Coordinates the workflow between components
+   - `/models`: Defines shared data structures (domain models)
+   - Each package includes dedicated mocks directory for testing (e.g., `internal/providers/aws/mocks`)
 
 2. **Testability**: The code uses dependency injection and interfaces to facilitate testing. Mock implementations are used extensively in unit tests.
 
@@ -123,7 +130,7 @@ The drift detector follows these key principles:
 1. **HCL Parsing Complexity**: Terraform's HCL format has a complex structure that can be challenging to parse correctly. I had to carefully handle different resource types, attribute formats, and nested blocks.
 
 2. **AWS API Limitations**: AWS API has rate limits that can be hit when checking many instances. My solution was to implement concurrency controls to limit the number of simultaneous API calls. 
-> However i discovered the the AWs describe support bulk-actions, but i've choosen not to unitlize this to keep things simple although i know actually implementing it will not bring too much complexities, but i choose this simple solution (Depending on the final usecase for this project and if we see that there is need to check a large number of instances, then i think going for the bulk-action can have a compeling benefit)
+> I discovered that AWS DescribeInstances supports bulk-actions, but chose not to utilize this initially to keep things simple. This approach works well for moderate-sized deployments while maintaining code clarity. For large-scale deployments (hundreds of instances), bulk operations could be implemented without significant architectural changes.
 
 ## Sample Data
 
@@ -132,12 +139,20 @@ The drift detector follows these key principles:
 
 ## Future Improvements
 
-- Support for Terraform state files (`.tfstate`) using direct JSON parsing or the `terraform-exec` library.
-- More comprehensive attribute comparison (add more resource properties like volumes, etc.).
-- Enhanced output formats (e.g., YAML, colorized output).
-- Improved error handling with retry logic for AWS API calls.
-- Support for comparing other AWS resources beyond EC2 instances (e.g., Security Groups, IAM Roles, S3 Buckets).
-- Instance filtering by tags or other criteria for bulk checks.
-- Deifining custom error type is one idea that can be explored here, this will give a lot more robustness on the error handling a reporting side.
-- Leveraging AWs describe support for bulk-actions, use this to bulk-fetch the instance as oppose to getting this 1 by 1 like i do not (there's not significant draw back to my current approach) how ever if the uses case is to expore a large set of ec2 instances, then bulk-actions is definatly the way to go here.
-- Leverage the use of enums for keeping the attribute much more consistent 
+- **Terraform State File Support**: Add support for `.tfstate` files using direct JSON parsing or the `terraform-exec` library.
+
+- **Enhanced Attribute Coverage**: Add support for more resource properties.
+
+- **Additional Output Formats**: Implement YAML and colorized console output options.
+
+- **AWS API Retry Logic**: Implement exponential backoff and retry mechanisms for AWS API calls.
+
+- **Multi-Resource Support**: Extend drift detection to other AWS resources beyond EC2 instances (e.g., Security Groups, IAM Roles, S3 Buckets).
+
+- **Tag-Based Filtering**: Add ability to select instances for checking based on tags rather than instance IDs.
+
+- **Custom Error Types**: Define specific error types for different failure scenarios.
+
+- **Bulk AWS API Operations**: Leverage AWS DescribeInstances' support for bulk queries.
+
+- **Attribute Enum System**: Implement an enumeration system for attribute names.
