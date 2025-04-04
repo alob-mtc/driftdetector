@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"strings"
 
-	"driftdetector/internal/orchestrator"
-
 	"github.com/spf13/cobra"
+	
+	"driftdetector/internal/orchestrator"
 )
 
 func main() {

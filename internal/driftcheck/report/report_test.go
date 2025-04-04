@@ -2,13 +2,14 @@ package report_test
 
 import (
 	"bytes"
-	"driftdetector/internal/driftcheck"
-	"driftdetector/internal/driftcheck/report"
 	"io"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"driftdetector/internal/driftcheck"
+	"driftdetector/internal/driftcheck/report"
 )
 
 // captureOutput temporarily redirects os.Stdout so we can capture what PrintReport writes.

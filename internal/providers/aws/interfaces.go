@@ -2,9 +2,10 @@ package aws
 
 import (
 	"context"
-	"driftdetector/internal/models"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+
+	"driftdetector/internal/models"
 )
 
 // EC2ClientAPI defines the interface for EC2 operations we need to mock

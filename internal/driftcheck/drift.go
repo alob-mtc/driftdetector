@@ -1,11 +1,12 @@
 package driftcheck
 
 import (
-	"driftdetector/internal/models"
 	"fmt"
 	"reflect"
 	"sort"
 	"strings"
+
+	"driftdetector/internal/models"
 )
 
 // DetectDrift compares AWS EC2 instance details with Terraform configuration details.

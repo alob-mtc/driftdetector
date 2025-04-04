@@ -2,13 +2,14 @@ package aws
 
 import (
 	"context"
-	"driftdetector/internal/models"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+
+	"driftdetector/internal/models"
 )
 
 // InstanceService handles interactions with AWS EC2 instances

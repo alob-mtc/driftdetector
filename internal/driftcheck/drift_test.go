@@ -1,10 +1,11 @@
 package driftcheck
 
 import (
-	"driftdetector/internal/models"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"driftdetector/internal/models"
 )
 
 func TestDetectDrift_NoDrift(t *testing.T) {

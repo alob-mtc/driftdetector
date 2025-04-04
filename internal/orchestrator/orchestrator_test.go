@@ -3,12 +3,6 @@ package orchestrator
 import (
 	"bytes"
 	"context"
-	awsMocks "driftdetector/internal/aws/mocks"
-	"driftdetector/internal/driftcheck"
-	"driftdetector/internal/driftcheck/report"
-	reportMocks "driftdetector/internal/driftcheck/report/mocks"
-	"driftdetector/internal/models"
-	terraformMocks "driftdetector/internal/terraform/mocks"
 	"errors"
 	"io"
 	"os"
@@ -16,6 +10,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+
+	"driftdetector/internal/driftcheck"
+	"driftdetector/internal/driftcheck/report"
+	reportMocks "driftdetector/internal/driftcheck/report/mocks"
+	"driftdetector/internal/models"
+	awsMocks "driftdetector/internal/providers/aws/mocks"
+	terraformMocks "driftdetector/internal/terraform/mocks"
 )
 
 // createMocks is a helper function to create mock instances for testing

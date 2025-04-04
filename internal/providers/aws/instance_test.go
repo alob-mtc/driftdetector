@@ -2,7 +2,7 @@ package aws
 
 import (
 	"context"
-	"driftdetector/internal/aws/mocks"
+	"driftdetector/internal/providers/aws/mocks"
 	"errors"
 	"testing"
 
