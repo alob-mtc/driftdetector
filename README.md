@@ -90,7 +90,7 @@ The drift detector follows these key principles:
    - `cmd/driftdetector`: Contains the main CLI entry point and command-line argument parsing
    
    internal:
-   - `/providers`: Contains provider implementations:
+   - `/providers`: Contains provider implementations (this makes it easy to add in new providers in the future):
      - `/providers/aws`: Handles AWS API interactions to fetch instance details
    - `/terraform`: Parses HCL configuration files
    - `/driftcheck`: Implements drift detection logic and reporting
@@ -153,6 +153,6 @@ The drift detector follows these key principles:
 
 - **Custom Error Types**: Define specific error types for different failure scenarios.
 
-- **Bulk AWS API Operations**: Leverage AWS DescribeInstances' support for bulk queries.
+- **Bulk AWS API Operations**: Leverage AWS DescribeInstances' support for bulk queries. Bulk-fetching the instance as opposed to getting this 1 by 1 like I do (there's not significant draw back to my current approach) however if the uses case is to explore a large set of ec2 instances, then bulk-actions is definitely the way to go here.
 
 - **Attribute Enum System**: Implement an enumeration system for attribute names.
