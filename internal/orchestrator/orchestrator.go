@@ -10,8 +10,9 @@ import (
 	"driftdetector/internal/driftcheck"
 	"driftdetector/internal/driftcheck/report"
 	"driftdetector/internal/models"
-	aws "driftdetector/internal/providers/aws"
+	"driftdetector/internal/providers/aws"
 	"driftdetector/internal/terraform"
+	"driftdetector/pkg/logging"
 )
 
 // Service orchestrates the drift detection process.
@@ -20,6 +21,7 @@ type Service struct {
 	awsSrv          aws.InstanceServiceAPI
 	terraformParser terraform.IProvider
 	reportPrinter   report.IPrinter
+	logger          logging.Logger
 }
 
 // NewService creates a new orchestrator service with the given configuration.
@@ -28,12 +30,19 @@ func NewService(
 	awsSrv aws.InstanceServiceAPI,
 	terraformParser terraform.IProvider,
 	reportPrinter report.IPrinter,
+	logger logging.Logger,
 ) *Service {
+	// If logger is nil, use a default logger
+	if logger == nil {
+		logger = logging.NewDefaultLogger()
+	}
+
 	return &Service{
 		config:          config,
 		awsSrv:          awsSrv,
 		terraformParser: terraformParser,
 		reportPrinter:   reportPrinter,
+		logger:          logger,
 	}
 }
 
@@ -45,7 +54,15 @@ func NewDefaultService(config Config) (*Service, error) {
 		return nil, fmt.Errorf("failed to initialize AWS service: %w", err)
 	}
 
-	return NewService(config, awsService, terraform.DefaultParser{}, report.DefaultPrinter{}), nil
+	logger := logging.NewDefaultLogger()
+
+	return NewService(
+		config,
+		awsService,
+		terraform.DefaultParser{},
+		report.DefaultPrinter{},
+		logger,
+	), nil
 }
 
 // Run executes the drift detection workflow for all instances
@@ -179,13 +196,13 @@ func (s *Service) generateSummaryReport(results []DriftDetectionResult) {
 	if errCount > 0 {
 		for _, r := range results {
 			if r.Error != nil {
-				fmt.Printf("Instance %s: Error - %s\n", r.InstanceID, r.Error)
+				s.logger.Error("Instance %s: Error - %s", r.InstanceID, r.Error)
 			}
 		}
 	}
 
 	if len(results) > 1 {
-		fmt.Printf("\n\nSummary: Checked %d instances, %d with drift, %d with errors\n",
+		s.logger.Info("\nSummary: Checked %d instances, %d with drift, %d with errors",
 			len(results),
 			countDrifts(results),
 			errCount,

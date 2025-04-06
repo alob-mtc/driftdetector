@@ -17,16 +17,19 @@ import (
 	"driftdetector/internal/models"
 	awsMocks "driftdetector/internal/providers/aws/mocks"
 	terraformMocks "driftdetector/internal/terraform/mocks"
+	loggerMocks "driftdetector/pkg/logging/mocks"
 )
 
 // createMocks is a helper function to create mock instances for testing
-func createMocks(t *testing.T) (*awsMocks.InstanceServiceAPI, *terraformMocks.IProvider, *reportMocks.IPrinter) {
+func createMocks(t *testing.T) (*awsMocks.InstanceServiceAPI, *terraformMocks.IProvider, *reportMocks.IPrinter, *loggerMocks.Logger) {
 	parserMock := terraformMocks.NewIProvider(t)
 	instanceMock := awsMocks.NewInstanceServiceAPI(t)
 	reportMock := reportMocks.NewIPrinter(t)
+	loggerMock := loggerMocks.NewLogger(t)
 
-	return instanceMock, parserMock, reportMock
+	return instanceMock, parserMock, reportMock, loggerMock
 }
+
 func TestValidateConfig(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -72,9 +75,9 @@ func TestValidateConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			instanceMock, parserMock, reportMock := createMocks(t)
+			instanceMock, parserMock, reportMock, loggerMock := createMocks(t)
 
-			service := NewService(tt.config, instanceMock, parserMock, reportMock)
+			service := NewService(tt.config, instanceMock, parserMock, reportMock, loggerMock)
 			err := service.validateConfig()
 
 			if tt.wantErr {
@@ -145,9 +148,9 @@ func TestGetOutputFormat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			instanceMock, parserMock, reportMock := createMocks(t)
+			instanceMock, parserMock, reportMock, loggerMock := createMocks(t)
 
-			service := NewService(Config{OutputFormat: tt.formatString}, instanceMock, parserMock, reportMock)
+			service := NewService(Config{OutputFormat: tt.formatString}, instanceMock, parserMock, reportMock, loggerMock)
 			format := service.getOutputFormat()
 			assert.Equal(t, tt.expected, format)
 		})
@@ -155,10 +158,10 @@ func TestGetOutputFormat(t *testing.T) {
 }
 
 func TestGenerateInstanceReport(t *testing.T) {
-	instanceMock, parserMock, reportMock := createMocks(t)
+	instanceMock, parserMock, reportMock, loggerMock := createMocks(t)
 
 	// Set up test case
-	service := NewService(Config{OutputFormat: "table"}, instanceMock, parserMock, reportMock)
+	service := NewService(Config{OutputFormat: "table"}, instanceMock, parserMock, reportMock, loggerMock)
 	instanceID := "i-12345"
 	driftResult := &driftcheck.DriftResult{
 		HasDrift: true,
@@ -179,7 +182,7 @@ func TestGenerateInstanceReport(t *testing.T) {
 }
 
 func TestProcessInstance(t *testing.T) {
-	instanceMock, parserMock, reportMock := createMocks(t)
+	instanceMock, parserMock, reportMock, loggerMock := createMocks(t)
 
 	cases := []struct {
 		name        string
@@ -217,7 +220,7 @@ func TestProcessInstance(t *testing.T) {
 				reportMock.On("PrintReport", tc.instanceID, mock.Anything, mock.Anything).Return(nil)
 			}
 
-			service := NewService(Config{}, instanceMock, parserMock, reportMock)
+			service := NewService(Config{}, instanceMock, parserMock, reportMock, loggerMock)
 			tfConfig := &models.InstanceDetails{
 				InstanceType: "t2.micro", // same as AWS for no drift
 			}
@@ -241,18 +244,24 @@ func TestGenerateSummaryReport(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
+	expectedErr := errors.New("error")
 	// Set up test data
 	results := []DriftDetectionResult{
 		{InstanceID: "i-1", HasDrift: true},
-		{InstanceID: "i-2", Error: errors.New("error")},
+		{InstanceID: "i-2", Error: expectedErr},
 		{InstanceID: "i-3", HasDrift: false},
 	}
 
 	// Create mocks
-	instanceMock, parserMock, reportMock := createMocks(t)
+	instanceMock, parserMock, reportMock, loggerMock := createMocks(t)
+
+	// Configure logger mock to verify expected calls
+	loggerMock.On("Error", "Instance %s: Error - %s", "i-2", expectedErr).Return()
+	loggerMock.On("Info", "\nSummary: Checked %d instances, %d with drift, %d with errors",
+		3, 1, 1).Return()
 
 	// Set up service
-	service := NewService(Config{}, instanceMock, parserMock, reportMock)
+	service := NewService(Config{}, instanceMock, parserMock, reportMock, loggerMock)
 
 	// Run the function
 	service.generateSummaryReport(results)
@@ -267,18 +276,11 @@ func TestGenerateSummaryReport(t *testing.T) {
 	// Restore stdout
 	os.Stdout = old
 
-	// Get the captured output
-	output := buf.String()
-
-	// Check that the output contains expected text
-	assert.Contains(t, output, "Instance i-2: Error - error")
-	assert.Contains(t, output, "Summary: Checked 3 instances, 1 with drift, 1 with errors")
+	// Verify logger mock was called correctly
+	loggerMock.AssertExpectations(t)
 }
 
 func TestRun(t *testing.T) {
-	// Create mocks
-	instanceMock, parserMock, reportMock := createMocks(t)
-
 	// Set up test cases
 	tests := []struct {
 		name             string
@@ -421,21 +423,22 @@ func TestRun(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset mocks
-			instanceMock.ExpectedCalls = nil
-			parserMock.ExpectedCalls = nil
-			reportMock.ExpectedCalls = nil
+			instanceMock, parserMock, reportMock, loggerMock := createMocks(t)
 
-			parserMock.On("ParseHCLConfig", tt.config.ConfigPath).Return(tt.mockTFConfig, tt.tfConfigError)
+			if len(tt.config.InstanceIDs) != 0 {
+				parserMock.On("ParseHCLConfig", tt.config.ConfigPath).Return(tt.mockTFConfig, tt.tfConfigError)
+			}
 
 			// Set up AWS instance expectations
 			for instanceID, instance := range tt.mockAWSInstances {
 				instanceMock.On("GetInstanceDetails", mock.Anything, instanceID).Return(instance, nil)
 			}
 
-			// Set up AWS error expectations
+			// Set up AWS error & logger expectations
 			if tt.awsErrors != nil {
 				for instanceID, err := range tt.awsErrors {
 					instanceMock.On("GetInstanceDetails", mock.Anything, instanceID).Return(nil, err)
+					loggerMock.On("Error", "Instance %s: Error - %s", instanceID, mock.Anything).Return()
 				}
 			}
 
@@ -444,7 +447,19 @@ func TestRun(t *testing.T) {
 				reportMock.On("PrintReport", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 			}
 
-			service := NewService(tt.config, instanceMock, parserMock, reportMock)
+			// Set up Summary logger expectations
+			if len(tt.config.InstanceIDs) > 1 {
+				loggerMock.On(
+					"Info",
+					"\nSummary: Checked %d instances, %d with drift, %d with errors",
+					len(tt.config.InstanceIDs),
+					mock.Anything,
+					mock.Anything,
+				).Return()
+			}
+
+			// Create the service
+			service := NewService(tt.config, instanceMock, parserMock, reportMock, loggerMock)
 
 			anyDrift, anyError, err := service.Run(context.Background())
 
@@ -457,11 +472,6 @@ func TestRun(t *testing.T) {
 
 			assert.Equal(t, tt.expectedAnyDrift, anyDrift, "anyDrift mismatch")
 			assert.Equal(t, tt.expectedAnyError, anyError, "anyError mismatch")
-
-			// Verify mock expectations
-			instanceMock.AssertExpectations(t)
-			parserMock.AssertExpectations(t)
-			reportMock.AssertExpectations(t)
 		})
 	}
 }

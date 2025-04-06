@@ -59,7 +59,7 @@ func printTableReport(report DriftReport) error {
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
 	// Print header
-	fmt.Fprintf(writer, "INSTANCE ID:\t%s\n\n", report.InstanceID)
+	fmt.Fprintf(writer, "\nINSTANCE ID:\t%s\n\n", report.InstanceID)
 	fmt.Fprintln(writer, "ATTRIBUTE\tAWS VALUE\tTERRAFORM VALUE\tSTATUS")
 	fmt.Fprintln(writer, "---------\t---------\t---------------\t------")
 
