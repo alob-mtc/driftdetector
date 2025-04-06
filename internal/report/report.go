@@ -1,12 +1,11 @@
 package report
 
 import (
+	"driftdetector/internal/models"
 	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
-
-	"driftdetector/internal/driftcheck"
 )
 
 // OutputFormatType defines the format types for the drift report.
@@ -21,13 +20,13 @@ const (
 
 // DriftReport represents a report for a single instance.
 type DriftReport struct {
-	InstanceID string             `json:"instance_id"`
-	Drifts     []driftcheck.Drift `json:"drifts"`
+	InstanceID string               `json:"instance_id"`
+	Drifts     []models.DriftDetail `json:"drifts"`
 }
 
 // PrintReport prints the drift report for a given instance using the specified output format.
 // Supported formats: "json" (machine-readable) and "table" (human-friendly).
-func PrintReport(instanceID string, drifts []driftcheck.Drift, outputFormat OutputFormatType) error {
+func PrintReport(instanceID string, drifts []models.DriftDetail, outputFormat OutputFormatType) error {
 	report := DriftReport{
 		InstanceID: instanceID,
 		Drifts:     drifts,
@@ -68,7 +67,7 @@ func printTableReport(report DriftReport) error {
 		fmt.Fprintf(writer, "%s\t%v\t%v\t%s\n",
 			d.Attribute,
 			formatValueForTable(d.AWSValue),
-			formatValueForTable(d.TFValue),
+			formatValueForTable(d.TerraformValue),
 			"DRIFT")
 	}
 
@@ -97,6 +96,6 @@ func formatValueForTable(v any) string {
 type DefaultPrinter struct{}
 
 // PrintReport implements the printer interface
-func (p DefaultPrinter) PrintReport(instanceID string, drifts []driftcheck.Drift, format OutputFormatType) error {
+func (p DefaultPrinter) PrintReport(instanceID string, drifts []models.DriftDetail, format OutputFormatType) error {
 	return PrintReport(instanceID, drifts, format)
 }

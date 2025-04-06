@@ -93,7 +93,8 @@ The drift detector follows these key principles:
    - `/providers`: Contains provider implementations (this makes it easy to add in new providers in the future):
      - `/providers/aws`: Handles AWS API interactions to fetch instance details
    - `/terraform`: Parses HCL configuration files
-   - `/driftcheck`: Implements drift detection logic and reporting
+   - `/driftcheck`: Implements drift detection logic
+   - `/reporting`: Implements drift reporting logic
    - `/orchestrator`: Coordinates the workflow between components
    - `/models`: Defines shared data structures (domain models)
    - Each package includes dedicated mocks directory for testing (e.g., `internal/providers/aws/mocks`)

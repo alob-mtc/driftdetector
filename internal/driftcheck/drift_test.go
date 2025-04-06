@@ -69,7 +69,7 @@ func TestDetectDrift_WithDrift(t *testing.T) {
 	// Check instance_type drift
 	drift, exists := result.Drifts["instance_type"]
 	assert.True(t, exists, "Expected drift in 'instance_type'")
-	assert.Equal(t, "t2.medium", drift.AWValue, "Incorrect AWS value for instance_type")
+	assert.Equal(t, "t2.medium", drift.AWSValue, "Incorrect AWS value for instance_type")
 	assert.Equal(t, "t2.micro", drift.TerraformValue, "Incorrect Terraform value for instance_type")
 
 	// Check tags drift
@@ -77,7 +77,7 @@ func TestDetectDrift_WithDrift(t *testing.T) {
 	assert.True(t, tagsExist, "Expected drift in 'tags'")
 
 	// Verify tags type
-	_, awsOk := tagsDrift.AWValue.(map[string]string)
+	_, awsOk := tagsDrift.AWSValue.(map[string]string)
 	assert.True(t, awsOk, "Expected AWS tags to be map[string]string")
 
 	_, tfOk := tagsDrift.TerraformValue.(map[string]string)
@@ -214,12 +214,12 @@ func TestConvertToDrifts(t *testing.T) {
 		Drifts: map[string]models.DriftDetail{
 			"instance_type": {
 				Attribute:      "instance_type",
-				AWValue:        "t2.medium",
+				AWSValue:       "t2.medium",
 				TerraformValue: "t2.micro",
 			},
 			"tags": {
 				Attribute: "tags",
-				AWValue: map[string]string{
+				AWSValue: map[string]string{
 					"Name": "aws-instance",
 					"Env":  "dev",
 				},
@@ -252,7 +252,7 @@ func TestConvertToDrifts(t *testing.T) {
 	for _, d := range drifts {
 		if d.Attribute == "instance_type" {
 			assert.Equal(t, "t2.medium", d.AWSValue, "Expected AWS value to be t2.medium")
-			assert.Equal(t, "t2.micro", d.TFValue, "Expected TF value to be t2.micro")
+			assert.Equal(t, "t2.micro", d.TerraformValue, "Expected TF value to be t2.micro")
 		}
 	}
 

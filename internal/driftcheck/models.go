@@ -1,6 +1,8 @@
 package driftcheck
 
-import "driftdetector/internal/models"
+import (
+	"driftdetector/internal/models"
+)
 
 // DriftResult represents the drift detection result between AWS and Terraform configurations.
 type DriftResult struct {
@@ -10,21 +12,14 @@ type DriftResult struct {
 	TfConfig  *models.InstanceDetails       // The Terraform configuration used for comparison
 }
 
-// Drift is for backward compatibility with existing report code.
-type Drift struct {
-	Attribute string
-	AWSValue  any
-	TFValue   any
-}
-
 // ConvertToDrifts converts a DriftResult to a slice of Drift for backward compatibility.
-func ConvertToDrifts(result *DriftResult) []Drift {
-	drifts := make([]Drift, 0, len(result.Drifts))
+func ConvertToDrifts(result *DriftResult) []models.DriftDetail {
+	drifts := make([]models.DriftDetail, 0, len(result.Drifts))
 	for _, detail := range result.Drifts {
-		drifts = append(drifts, Drift{
-			Attribute: detail.Attribute,
-			AWSValue:  detail.AWValue,
-			TFValue:   detail.TerraformValue,
+		drifts = append(drifts, models.DriftDetail{
+			Attribute:      detail.Attribute,
+			AWSValue:       detail.AWSValue,
+			TerraformValue: detail.TerraformValue,
 		})
 	}
 	return drifts

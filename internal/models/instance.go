@@ -13,6 +13,6 @@ type InstanceDetails struct {
 // DriftDetail represents the difference found for a specific attribute.
 type DriftDetail struct {
 	Attribute      string
-	AWValue        any
+	AWSValue       any
 	TerraformValue any
 }

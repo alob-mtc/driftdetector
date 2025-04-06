@@ -2,14 +2,14 @@ package report_test
 
 import (
 	"bytes"
+	"driftdetector/internal/models"
 	"io"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
-	"driftdetector/internal/driftcheck"
-	"driftdetector/internal/driftcheck/report"
+	"driftdetector/internal/report"
 )
 
 // captureOutput temporarily redirects os.Stdout so we can capture what PrintReport writes.
@@ -29,11 +29,11 @@ func captureOutput(f func()) string {
 
 func TestPrintReport_JSON(t *testing.T) {
 	instanceID := "i-1234567890abcdef0"
-	drifts := []driftcheck.Drift{
+	drifts := []models.DriftDetail{
 		{
-			Attribute: "instance_type",
-			AWSValue:  "t2.micro",
-			TFValue:   "t2.small",
+			Attribute:      "instance_type",
+			AWSValue:       "t2.micro",
+			TerraformValue: "t2.small",
 		},
 	}
 
@@ -49,11 +49,11 @@ func TestPrintReport_JSON(t *testing.T) {
 
 func TestPrintReport_Table(t *testing.T) {
 	instanceID := "i-1234567890abcdef0"
-	drifts := []driftcheck.Drift{
+	drifts := []models.DriftDetail{
 		{
-			Attribute: "instance_type",
-			AWSValue:  "t2.micro",
-			TFValue:   "t2.small",
+			Attribute:      "instance_type",
+			AWSValue:       "t2.micro",
+			TerraformValue: "t2.small",
 		},
 	}
 
@@ -71,11 +71,11 @@ func TestPrintReport_Table(t *testing.T) {
 
 func TestPrintReport_InvalidFormat(t *testing.T) {
 	instanceID := "i-1234567890abcdef0"
-	drifts := []driftcheck.Drift{
+	drifts := []models.DriftDetail{
 		{
-			Attribute: "instance_type",
-			AWSValue:  "t2.micro",
-			TFValue:   "t2.small",
+			Attribute:      "instance_type",
+			AWSValue:       "t2.micro",
+			TerraformValue: "t2.small",
 		},
 	}
 
@@ -88,11 +88,11 @@ func TestFormatValueForTable(t *testing.T) {
 	// by comparing the output from PrintReport
 
 	// Test nil value
-	nilTest := []driftcheck.Drift{
+	nilTest := []models.DriftDetail{
 		{
-			Attribute: "nil_test",
-			AWSValue:  nil,
-			TFValue:   "not-nil",
+			Attribute:      "nil_test",
+			AWSValue:       nil,
+			TerraformValue: "not-nil",
 		},
 	}
 
@@ -103,11 +103,11 @@ func TestFormatValueForTable(t *testing.T) {
 	assert.Contains(t, nilOutput, "<nil>", "Nil value should be formatted as '<nil>'")
 
 	// Test empty string
-	emptyTest := []driftcheck.Drift{
+	emptyTest := []models.DriftDetail{
 		{
-			Attribute: "empty_test",
-			AWSValue:  "",
-			TFValue:   "not-empty",
+			Attribute:      "empty_test",
+			AWSValue:       "",
+			TerraformValue: "not-empty",
 		},
 	}
 
