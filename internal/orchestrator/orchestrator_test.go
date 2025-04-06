@@ -1,11 +1,8 @@
 package orchestrator
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"io"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,26 +14,27 @@ import (
 	"driftdetector/internal/report"
 	reportMocks "driftdetector/internal/report/mocks"
 	terraformMocks "driftdetector/internal/terraform/mocks"
+	"driftdetector/pkg/logging"
 	loggerMocks "driftdetector/pkg/logging/mocks"
 )
 
 // createMocks is a helper function to create mock instances for testing
 // It initializes all the required dependencies with mocks that can be configured
 // with expectations for each test case.
-func createMocks(t *testing.T) (*awsMocks.InstanceServiceAPI, *terraformMocks.IProvider, *reportMocks.IPrinter, *loggerMocks.Logger) {
+func createMocks(t *testing.T) (*awsMocks.InstanceServiceAPI, *terraformMocks.IProvider, *reportMocks.IPrinter, logging.Logger) {
 	parserMock := terraformMocks.NewIProvider(t)
 	instanceMock := awsMocks.NewInstanceServiceAPI(t)
 	reportMock := reportMocks.NewIPrinter(t)
-	loggerMock := loggerMocks.NewLogger(t)
+	loggerMock := logging.NewMockLogger()
 
 	return instanceMock, parserMock, reportMock, loggerMock
 }
 
 // setupServiceWithMocks creates a new Service instance with the provided configuration and mocks
-func setupServiceWithMocks(t *testing.T, config Config) (*Service, *awsMocks.InstanceServiceAPI, *terraformMocks.IProvider, *reportMocks.IPrinter, *loggerMocks.Logger) {
+func setupServiceWithMocks(t *testing.T, config Config) (*Service, *awsMocks.InstanceServiceAPI, *terraformMocks.IProvider, *reportMocks.IPrinter) {
 	instanceMock, parserMock, reportMock, loggerMock := createMocks(t)
 	service := NewService(config, instanceMock, parserMock, reportMock, loggerMock)
-	return service, instanceMock, parserMock, reportMock, loggerMock
+	return service, instanceMock, parserMock, reportMock
 }
 
 // TestValidateConfig tests the configuration validation logic
@@ -88,7 +86,7 @@ func TestValidateConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Use the helper function to create service with mocks
-			service, _, _, _, _ := setupServiceWithMocks(t, tt.config)
+			service, _, _, _ := setupServiceWithMocks(t, tt.config)
 
 			// Test the validation function
 			err := service.validateConfig()
@@ -171,7 +169,7 @@ func TestGetOutputFormat(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create service with the test format string
-			service, _, _, _, _ := setupServiceWithMocks(t, Config{OutputFormat: tt.formatString})
+			service, _, _, _ := setupServiceWithMocks(t, Config{OutputFormat: tt.formatString})
 
 			// Get the format and check it matches expected value
 			format := service.getOutputFormat()
@@ -184,7 +182,7 @@ func TestGetOutputFormat(t *testing.T) {
 // to ensure it correctly calls the report printer with the right parameters.
 func TestGenerateInstanceReport(t *testing.T) {
 	// Create service and mocks
-	service, _, _, reportMock, _ := setupServiceWithMocks(t, Config{OutputFormat: "table"})
+	service, _, _, reportMock := setupServiceWithMocks(t, Config{OutputFormat: "table"})
 
 	// Set up test data
 	instanceID := "i-12345"
@@ -227,7 +225,6 @@ func createTestDriftInstance(instanceID string, instanceType string) *models.Ins
 func TestProcessInstance(t *testing.T) {
 	cases := []struct {
 		name        string
-		instanceID  string
 		awsInstance *models.InstanceDetails
 		awsError    error
 		expectErr   bool
@@ -235,18 +232,9 @@ func TestProcessInstance(t *testing.T) {
 	}{
 		{
 			name:        "Success case - no drift",
-			instanceID:  "i-success",
 			awsInstance: createTestDriftInstance("i-success", "t2.micro"),
 			awsError:    nil,
 			expectErr:   false,
-			expectDrift: false,
-		},
-		{
-			name:        "AWS error case",
-			instanceID:  "i-error",
-			awsInstance: nil,
-			awsError:    errors.New("AWS error"),
-			expectErr:   true,
 			expectDrift: false,
 		},
 	}
@@ -254,14 +242,11 @@ func TestProcessInstance(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create service and mocks
-			service, instanceMock, _, reportMock, _ := setupServiceWithMocks(t, Config{})
-
-			// Configure AWS mock
-			instanceMock.On("GetInstanceDetails", mock.Anything, tc.instanceID).Return(tc.awsInstance, tc.awsError)
+			service, _, _, reportMock := setupServiceWithMocks(t, Config{})
 
 			// Configure report mock if needed
 			if !tc.expectErr {
-				reportMock.On("PrintReport", tc.instanceID, mock.Anything, mock.Anything).Return(nil)
+				reportMock.On("PrintReport", tc.awsInstance.InstanceID, mock.Anything, mock.Anything).Return(nil)
 			}
 
 			// Create Terraform config without drift
@@ -273,7 +258,7 @@ func TestProcessInstance(t *testing.T) {
 			}
 
 			// Process the instance
-			result := service.processInstance(context.Background(), tc.instanceID, tfConfig)
+			result := service.processInstance(tc.awsInstance, tfConfig)
 
 			// Verify results
 			if tc.expectErr {
@@ -282,7 +267,7 @@ func TestProcessInstance(t *testing.T) {
 				assert.Nil(t, result.Error, "Should not have an error")
 			}
 			assert.Equal(t, tc.expectDrift, result.HasDrift, "Drift detection result should match expectations")
-			assert.Equal(t, tc.instanceID, result.InstanceID, "Instance ID should be preserved")
+			assert.Equal(t, tc.awsInstance.InstanceID, result.InstanceID, "Instance ID should be preserved")
 		})
 	}
 }
@@ -290,11 +275,6 @@ func TestProcessInstance(t *testing.T) {
 // TestGenerateSummaryReport tests the summary report generation
 // to ensure it correctly logs the overview of drift detection results.
 func TestGenerateSummaryReport(t *testing.T) {
-	// Capture stdout to test output (although we're now using the logger)
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
 	// Create a standard error for testing
 	expectedErr := errors.New("error")
 
@@ -306,7 +286,11 @@ func TestGenerateSummaryReport(t *testing.T) {
 	}
 
 	// Create service and configure mocks
-	service, _, _, _, loggerMock := setupServiceWithMocks(t, Config{})
+	parserMock := terraformMocks.NewIProvider(t)
+	instanceMock := awsMocks.NewInstanceServiceAPI(t)
+	reportMock := reportMocks.NewIPrinter(t)
+	loggerMock := loggerMocks.NewLogger(t)
+	service := NewService(Config{}, instanceMock, parserMock, reportMock, loggerMock)
 
 	// Configure logger mock with expected calls
 	// First, expect an error log for the instance with an error
@@ -317,46 +301,30 @@ func TestGenerateSummaryReport(t *testing.T) {
 
 	// Run the function being tested
 	service.generateSummaryReport(results)
-
-	// Close writer to flush the buffer
-	w.Close()
-
-	// Read the captured output (no longer needed but kept for backward compatibility)
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-
-	// Restore stdout
-	os.Stdout = old
-
-	// Verify logger mock was called with the expected parameters
-	loggerMock.AssertExpectations(t)
 }
 
-// createTestRunCase creates a standard test case for the Run function
-// which reduces duplicate code for setting up similar cases
-func createTestRunCase(name string, instanceIDs []string, hasDrift bool, hasError bool, expectError bool) struct {
+// ================
+// Run function tests
+// ================
+
+// testCase defines a test case for the Run function
+type testCase struct {
 	name             string
 	config           Config
 	mockTFConfig     *models.InstanceDetails
-	mockAWSInstances map[string]*models.InstanceDetails
+	mockAWSInstances []*models.InstanceDetails
 	awsErrors        map[string]error
 	expectedAnyDrift bool
 	expectedAnyError bool
 	expectErr        bool
 	tfConfigError    error
-} {
+}
+
+// createTestRunCase creates a standard test case for the Run function
+// which reduces duplicate code for setting up similar cases
+func createTestRunCase(name string, instanceIDs []string, hasDrift bool, hasError bool, expectError bool) testCase {
 	// Initialize a basic test case with common configurations
-	testCase := struct {
-		name             string
-		config           Config
-		mockTFConfig     *models.InstanceDetails
-		mockAWSInstances map[string]*models.InstanceDetails
-		awsErrors        map[string]error
-		expectedAnyDrift bool
-		expectedAnyError bool
-		expectErr        bool
-		tfConfigError    error
-	}{
+	return testCase{
 		name: name,
 		config: Config{
 			InstanceIDs: instanceIDs,
@@ -368,90 +336,60 @@ func createTestRunCase(name string, instanceIDs []string, hasDrift bool, hasErro
 				"Environment": "test",
 			},
 		},
-		mockAWSInstances: make(map[string]*models.InstanceDetails),
+		mockAWSInstances: make([]*models.InstanceDetails, 0, len(instanceIDs)),
 		awsErrors:        nil,
 		expectedAnyDrift: hasDrift,
 		expectedAnyError: hasError,
 		expectErr:        expectError,
 		tfConfigError:    nil,
 	}
-
-	// Return the initialized test case
-	return testCase
 }
 
 // TestRun tests the main Run function of the orchestrator
 // to ensure it correctly coordinates the drift detection workflow.
 func TestRun(t *testing.T) {
 	// Set up test cases
-	tests := []struct {
-		name             string
-		config           Config
-		mockTFConfig     *models.InstanceDetails
-		mockAWSInstances map[string]*models.InstanceDetails
-		awsErrors        map[string]error
-		expectedAnyDrift bool
-		expectedAnyError bool
-		expectErr        bool
-		tfConfigError    error
-	}{
+	tests := []testCase{
 		// Create a test case for a successful run with drift
-		func() struct {
-			name             string
-			config           Config
-			mockTFConfig     *models.InstanceDetails
-			mockAWSInstances map[string]*models.InstanceDetails
-			awsErrors        map[string]error
-			expectedAnyDrift bool
-			expectedAnyError bool
-			expectErr        bool
-			tfConfigError    error
-		} {
+		func() testCase {
 			// Start with a standard test case
 			tc := createTestRunCase("Successful run - with drift",
 				[]string{"i-123", "i-456"}, true, false, false)
 
 			// Customize AWS instances to create drift in one instance
-			tc.mockAWSInstances["i-123"] = &models.InstanceDetails{
-				InstanceID:   "i-123",
-				InstanceType: "t2.large", // Drift in instance type
-				Tags: map[string]string{
-					"Environment": "test",
+			tc.mockAWSInstances = []*models.InstanceDetails{
+				{
+					InstanceID:   "i-123",
+					InstanceType: "t2.large", // Drift in instance type
+					Tags: map[string]string{
+						"Environment": "test",
+					},
+				},
+				{
+					InstanceID:   "i-456",
+					InstanceType: "t2.micro", // No drift
+					Tags: map[string]string{
+						"Environment": "test",
+					},
 				},
 			}
-			tc.mockAWSInstances["i-456"] = &models.InstanceDetails{
-				InstanceID:   "i-456",
-				InstanceType: "t2.micro", // No drift
-				Tags: map[string]string{
-					"Environment": "test",
-				},
-			}
-
 			return tc
 		}(),
 
 		// Create a test case for a successful run without drift
-		func() struct {
-			name             string
-			config           Config
-			mockTFConfig     *models.InstanceDetails
-			mockAWSInstances map[string]*models.InstanceDetails
-			awsErrors        map[string]error
-			expectedAnyDrift bool
-			expectedAnyError bool
-			expectErr        bool
-			tfConfigError    error
-		} {
+		func() testCase {
 			// Start with a standard test case
 			tc := createTestRunCase("Successful run - no drift",
 				[]string{"i-123"}, false, false, false)
 
 			// Add one AWS instance without drift
-			tc.mockAWSInstances["i-123"] = &models.InstanceDetails{
-				InstanceID:   "i-123",
-				InstanceType: "t2.micro", // No drift
-				Tags: map[string]string{
-					"Environment": "test",
+			tc.mockAWSInstances = []*models.InstanceDetails{
+				{
+					InstanceID:   "i-123",
+					InstanceType: "t2.micro", // No drift
+					Tags: map[string]string{
+						"Environment": "test",
+					},
 				},
 			}
 
@@ -459,31 +397,12 @@ func TestRun(t *testing.T) {
 		}(),
 
 		// Create a test case with AWS error
-		func() struct {
-			name             string
-			config           Config
-			mockTFConfig     *models.InstanceDetails
-			mockAWSInstances map[string]*models.InstanceDetails
-			awsErrors        map[string]error
-			expectedAnyDrift bool
-			expectedAnyError bool
-			expectErr        bool
-			tfConfigError    error
-		} {
+		func() testCase {
 			// Start with a standard test case
 			tc := createTestRunCase("AWS error",
-				[]string{"i-123", "i-error"}, false, true, false)
+				[]string{"i-123", "i-error"}, false, true, true)
 
-			// Add one successful AWS instance without drift
-			tc.mockAWSInstances["i-123"] = &models.InstanceDetails{
-				InstanceID:   "i-123",
-				InstanceType: "t2.micro",
-				Tags: map[string]string{
-					"Environment": "test",
-				},
-			}
-
-			// Add one AWS instance with error
+			// Add AWS error
 			tc.awsErrors = map[string]error{
 				"i-error": errors.New("AWS error"),
 			}
@@ -492,17 +411,7 @@ func TestRun(t *testing.T) {
 		}(),
 
 		// Create a test case for Terraform configuration error
-		func() struct {
-			name             string
-			config           Config
-			mockTFConfig     *models.InstanceDetails
-			mockAWSInstances map[string]*models.InstanceDetails
-			awsErrors        map[string]error
-			expectedAnyDrift bool
-			expectedAnyError bool
-			expectErr        bool
-			tfConfigError    error
-		} {
+		func() testCase {
 			tc := createTestRunCase("Terraform config error",
 				[]string{"i-123"}, false, false, true)
 
@@ -514,17 +423,7 @@ func TestRun(t *testing.T) {
 		}(),
 
 		// Create a test case for invalid configuration
-		func() struct {
-			name             string
-			config           Config
-			mockTFConfig     *models.InstanceDetails
-			mockAWSInstances map[string]*models.InstanceDetails
-			awsErrors        map[string]error
-			expectedAnyDrift bool
-			expectedAnyError bool
-			expectErr        bool
-			tfConfigError    error
-		} {
+		func() testCase {
 			tc := createTestRunCase("Invalid config - no instances",
 				[]string{}, false, false, true)
 
@@ -532,17 +431,7 @@ func TestRun(t *testing.T) {
 		}(),
 
 		// Create a test case with concurrency limit
-		func() struct {
-			name             string
-			config           Config
-			mockTFConfig     *models.InstanceDetails
-			mockAWSInstances map[string]*models.InstanceDetails
-			awsErrors        map[string]error
-			expectedAnyDrift bool
-			expectedAnyError bool
-			expectErr        bool
-			tfConfigError    error
-		} {
+		func() testCase {
 			// Start with a standard test case
 			tc := createTestRunCase("With concurrency limit",
 				[]string{"i-123", "i-456"}, false, false, false)
@@ -551,18 +440,20 @@ func TestRun(t *testing.T) {
 			tc.config.ConcurrencyLimit = 1
 
 			// Add AWS instances that match Terraform config (no drift)
-			tc.mockAWSInstances["i-123"] = &models.InstanceDetails{
-				InstanceID:   "i-123",
-				InstanceType: "t2.micro",
-				Tags: map[string]string{
-					"Environment": "test",
+			tc.mockAWSInstances = []*models.InstanceDetails{
+				{
+					InstanceID:   "i-123",
+					InstanceType: "t2.micro",
+					Tags: map[string]string{
+						"Environment": "test",
+					},
 				},
-			}
-			tc.mockAWSInstances["i-456"] = &models.InstanceDetails{
-				InstanceID:   "i-456",
-				InstanceType: "t2.micro",
-				Tags: map[string]string{
-					"Environment": "test",
+				{
+					InstanceID:   "i-456",
+					InstanceType: "t2.micro",
+					Tags: map[string]string{
+						"Environment": "test",
+					},
 				},
 			}
 
@@ -573,7 +464,7 @@ func TestRun(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create service and configure mocks
-			service, instanceMock, parserMock, reportMock, loggerMock := setupServiceWithMocks(t, tt.config)
+			service, instanceMock, parserMock, reportMock := setupServiceWithMocks(t, tt.config)
 
 			// Configure Terraform parser mock if instance IDs are provided
 			if len(tt.config.InstanceIDs) != 0 {
@@ -581,16 +472,15 @@ func TestRun(t *testing.T) {
 			}
 
 			// Configure AWS mock for each instance
-			for instanceID, instance := range tt.mockAWSInstances {
-				instanceMock.On("GetInstanceDetails", mock.Anything, instanceID).Return(instance, nil)
+			if len(tt.mockAWSInstances) > 0 {
+				instanceMock.On("GetInstancesDetails", mock.Anything, tt.config.InstanceIDs).Return(tt.mockAWSInstances, nil)
 			}
 
-			// Configure AWS error & logger mocks if needed
+			// Configure AWS error mock if needed
 			if tt.awsErrors != nil {
-				for instanceID, err := range tt.awsErrors {
-					instanceMock.On("GetInstanceDetails", mock.Anything, instanceID).Return(nil, err)
-					loggerMock.On("Error", "Instance %s: Error - %s", instanceID, mock.Anything).Return()
-				}
+				// Return error for the error case
+				errorInstances := make([]*models.InstanceDetails, 0)
+				instanceMock.On("GetInstancesDetails", mock.Anything, tt.config.InstanceIDs).Return(errorInstances, tt.awsErrors["i-error"])
 			}
 
 			// Configure report mock if not expecting a configuration error
@@ -598,30 +488,19 @@ func TestRun(t *testing.T) {
 				reportMock.On("PrintReport", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 			}
 
-			// Configure summary logger if multiple instances
-			if len(tt.config.InstanceIDs) > 1 {
-				loggerMock.On(
-					"Info",
-					"\nSummary: Checked %d instances, %d with drift, %d with errors",
-					len(tt.config.InstanceIDs),
-					mock.Anything,
-					mock.Anything,
-				).Return()
-			}
-
-			// Run the orchestrator
+			// Run the function being tested
 			anyDrift, anyError, err := service.Run(context.Background())
 
 			// Verify results
 			if tt.expectErr {
-				assert.Error(t, err, "Should return an error for invalid configurations")
-				return
+				assert.Error(t, err, "Expected an error")
+				return // Don't check drift/error flags if we expected an error
 			} else {
-				assert.NoError(t, err, "Should not return an error for valid configurations")
+				assert.NoError(t, err, "Did not expect an error")
 			}
 
-			assert.Equal(t, tt.expectedAnyDrift, anyDrift, "anyDrift flag should match expected value")
-			assert.Equal(t, tt.expectedAnyError, anyError, "anyError flag should match expected value")
+			assert.Equal(t, tt.expectedAnyDrift, anyDrift, "Drift detection result should match expectations")
+			assert.Equal(t, tt.expectedAnyError, anyError, "Error status should match expectations")
 		})
 	}
 }

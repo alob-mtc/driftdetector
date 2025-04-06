@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"driftdetector/pkg/logging"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -12,7 +14,8 @@ func TestParseHCLConfig_CompleteInstanceDetails(t *testing.T) {
 	testFile := filepath.Join("testdata", "valid_instance.tf")
 
 	// Create parser and parse the HCL config
-	parser := DefaultParser{}
+	logger := logging.NewMockLogger()
+	parser := NewParserWithLogger(logger)
 	instance, err := parser.ParseHCLConfig(testFile)
 
 	assert.NoError(t, err)
@@ -34,7 +37,8 @@ func TestParseHCLConfig_NoInstance(t *testing.T) {
 	testFile := filepath.Join("testdata", "no_instance.tf")
 
 	// Create parser and parse the HCL config
-	parser := DefaultParser{}
+	logger := logging.NewMockLogger()
+	parser := NewParserWithLogger(logger)
 	instance, err := parser.ParseHCLConfig(testFile)
 
 	// Should get an error about no aws_instance found
@@ -47,7 +51,8 @@ func TestParseHCLConfig_InvalidHCL(t *testing.T) {
 	testFile := filepath.Join("testdata", "invalid_hcl.tf")
 
 	// Create parser and parse the HCL config
-	parser := DefaultParser{}
+	logger := logging.NewMockLogger()
+	parser := NewParserWithLogger(logger)
 	instance, err := parser.ParseHCLConfig(testFile)
 
 	// Should get an error about invalid HCL
@@ -60,7 +65,8 @@ func TestParseHCLConfig_InvalidAwsInstance(t *testing.T) {
 	testFile := filepath.Join("testdata", "invalid_aws_instance.tf")
 
 	// Create parser and parse the HCL config
-	parser := DefaultParser{}
+	logger := logging.NewMockLogger()
+	parser := NewParserWithLogger(logger)
 	instance, err := parser.ParseHCLConfig(testFile)
 
 	// The function should return an error for missing instance_type
@@ -70,7 +76,8 @@ func TestParseHCLConfig_InvalidAwsInstance(t *testing.T) {
 
 func TestParseHCLConfig_NonExistentFile(t *testing.T) {
 	// Parse a file that doesn't exist
-	parser := DefaultParser{}
+	logger := logging.NewMockLogger()
+	parser := NewParserWithLogger(logger)
 	instance, err := parser.ParseHCLConfig("testdata/non_existent_file.tf")
 
 	// Should get an error about file not found
@@ -80,7 +87,8 @@ func TestParseHCLConfig_NonExistentFile(t *testing.T) {
 
 // This test covers the DefaultParser implementation
 func TestDefaultParser_ParseHCLConfig(t *testing.T) {
-	parser := DefaultParser{}
+	// Test with default logger
+	parser := NewDefaultParser()
 	testFile := filepath.Join("testdata", "valid_instance.tf")
 
 	// Parse the HCL config using the DefaultParser

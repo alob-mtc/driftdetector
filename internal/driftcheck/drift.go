@@ -3,11 +3,18 @@ package driftcheck
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
 	"driftdetector/internal/models"
 )
+
+// getSkipAttributes returns a list of attributes that should be skipped during drift detection.
+func getSkipAttributes() []string {
+	skipAttributes := []string{"instance_id"}
+	return skipAttributes
+}
 
 // AttributeComparator is a function type that compares two attributes
 // and returns whether they differ, along with their values.
@@ -20,10 +27,10 @@ type AttributeComparator func(aws, tf *models.InstanceDetails) (hasDrift bool, a
 func DetectDrift(awsInstance, tfInstance *models.InstanceDetails, attributesToCheck []string) (*DriftResult, error) {
 	// Validate input parameters
 	if awsInstance == nil {
-		return nil, fmt.Errorf("AWS instance details are nil")
+		return nil, NewDriftError(ErrInvalidInput, "AWS instance details are nil", "", nil)
 	}
 	if tfInstance == nil {
-		return nil, fmt.Errorf("terraform instance details are nil")
+		return nil, NewDriftError(ErrInvalidInput, "Terraform instance details are nil", "", nil)
 	}
 
 	// Initialize the result structure
@@ -40,10 +47,14 @@ func DetectDrift(awsInstance, tfInstance *models.InstanceDetails, attributesToCh
 	// Determine which attributes to check
 	if len(attributesToCheck) > 0 {
 		// When a subset is provided, check only those attributes
-		checkSpecificAttributes(result, awsInstance, tfInstance, attributesToCheck, allAttributes)
+		if err := checkSpecificAttributes(result, awsInstance, tfInstance, attributesToCheck, allAttributes); err != nil {
+			return result, err
+		}
 	} else {
 		// No subset provided: check all attributes except "instance_id"
-		checkAllAttributes(result, awsInstance, tfInstance, allAttributes)
+		if err := checkAllAttributes(result, awsInstance, tfInstance, allAttributes); err != nil {
+			return result, err
+		}
 	}
 
 	return result, nil
@@ -53,7 +64,7 @@ func DetectDrift(awsInstance, tfInstance *models.InstanceDetails, attributesToCh
 // This allows for easy extension with new attributes without modifying the main logic.
 func getAttributeComparators() map[string]AttributeComparator {
 	return map[string]AttributeComparator{
-		// Skip instance_id since it's not defined in HCL and is assigned by AWS
+		//! Skip instance_id since it's not defined in HCL and is assigned by AWS
 		"instance_type": func(aws, tf *models.InstanceDetails) (bool, any, any) {
 			return aws.InstanceType != tf.InstanceType, aws.InstanceType, tf.InstanceType
 		},
@@ -103,14 +114,18 @@ func checkSpecificAttributes(
 	tfInstance *models.InstanceDetails,
 	attributesToCheck []string,
 	allAttributes map[string]AttributeComparator,
-) {
+) error {
 	for _, attr := range attributesToCheck {
 		normalizedAttr := normalizeAttributeName(attr)
 		if checkFn, exists := allAttributes[normalizedAttr]; exists {
-			checkAttributeAndUpdateResult(result, normalizedAttr, checkFn, awsInstance, tfInstance)
+			if err := checkAttributeAndUpdateResult(result, normalizedAttr, checkFn, awsInstance, tfInstance); err != nil {
+				return err
+			}
+		} else {
+			return NewDriftError(ErrResourceMissing, "Requested attribute is not supported", attr, nil)
 		}
-		// If an attribute doesn't exist in the map, it's silently ignored
 	}
+	return nil
 }
 
 // checkAllAttributes checks for drift in all available attributes except instance_id
@@ -119,10 +134,17 @@ func checkAllAttributes(
 	awsInstance,
 	tfInstance *models.InstanceDetails,
 	allAttributes map[string]AttributeComparator,
-) {
+) error {
 	for attr, checkFn := range allAttributes {
-		checkAttributeAndUpdateResult(result, attr, checkFn, awsInstance, tfInstance)
+		// Skip attributes that should be skipped
+		if slices.Contains(getSkipAttributes(), attr) {
+			continue
+		}
+		if err := checkAttributeAndUpdateResult(result, attr, checkFn, awsInstance, tfInstance); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // checkAttributeAndUpdateResult checks a single attribute for drift and updates the result
@@ -132,7 +154,25 @@ func checkAttributeAndUpdateResult(
 	checkFn AttributeComparator,
 	awsInstance,
 	tfInstance *models.InstanceDetails,
-) {
+) error {
+	// Add basic validation
+	if attrName == "" {
+		return NewDriftError(ErrInvalidInput, "Attribute name cannot be empty", "", nil)
+	}
+
+	// Use recover to handle any panics during comparison
+	defer func() {
+		if r := recover(); r != nil {
+			err, ok := r.(error)
+			if !ok {
+				err = fmt.Errorf("%v", r)
+			}
+			// We can't return from defer, so we panic with our wrapped error
+			// This will be caught by the calling function
+			panic(NewDriftError(ErrComparisonFailed, fmt.Sprintf("Panic during comparison: %v", r), attrName, err))
+		}
+	}()
+
 	hasDrift, awsValue, tfValue := checkFn(awsInstance, tfInstance)
 	if hasDrift {
 		// Mark the overall result as having drift
@@ -145,6 +185,8 @@ func checkAttributeAndUpdateResult(
 			TerraformValue: tfValue,
 		}
 	}
+
+	return nil
 }
 
 // normalizeAttributeName standardizes attribute names for comparison.
@@ -158,18 +200,20 @@ func normalizeAttributeName(attr string) string {
 	normalized = strings.ReplaceAll(normalized, "-", "_")
 	normalized = strings.ReplaceAll(normalized, " ", "_")
 
-	// Handle special cases
-	switch normalized {
-	case "type", "instancetype":
-		return "instance_type"
-	case "sg", "securitygroup", "security_group", "securitygroups", "security_groups":
-		return "security_groups"
-	case "subnet":
-		return "subnet_id"
-	case "vpc":
-		return "vpc_id"
-	case "id":
-		return "instance_id"
+	specialCases := map[string]string{
+		"type":           "instance_type",
+		"instancetype":   "instance_type",
+		"sg":             "security_groups",
+		"securitygroup":  "security_groups",
+		"security_group": "security_groups",
+		"securitygroups": "security_groups",
+		"subnet":         "subnet_id",
+		"vpc":            "vpc_id",
+		"id":             "instance_id",
+	}
+
+	if replacement, exists := specialCases[normalized]; exists {
+		return replacement
 	}
 
 	return normalized

@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,14 @@ const (
 	WARN
 	ERROR
 )
+
+// NewMockLogger returns a convenient mock logger for testing
+func NewMockLogger() *DefaultLogger {
+	return &DefaultLogger{
+		writer: bytes.NewBufferString(""),
+		level:  INFO,
+	}
+}
 
 // Logger interface defines logging operations
 //

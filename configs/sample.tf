@@ -1,11 +1,11 @@
-  resource "aws_instance" "example" {
-    ami                    = "ami-0274f4b62b6ae3bd4"
-    instance_type          = "t2.small"
-    subnet_id              = "subnet-12345"
-    vpc_security_group_ids = ["sg-12345", "sg-0ede820f9c1b2b4bf"]
+resource "aws_instance" "example" {
+  ami                         = "ami-00a929b66ed6e0de6"
+  instance_type               = "t2.micro"
+  subnet_id                   = "subnet-0b98e7dc732b59e7a"
+  vpc_security_group_ids      = ["sg-0ede820f9c1b2b4bf"]
 
-    tags = {
-      Name = "TestInstance"
-      Env  = "Test"
-    }
+  tags = {
+    Name = "TestInstance"
+    Env  = "Staging"
   }
+}

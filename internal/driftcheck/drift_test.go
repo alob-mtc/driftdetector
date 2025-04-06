@@ -1,6 +1,7 @@
 package driftcheck
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -263,4 +264,74 @@ func TestConvertToDrifts(t *testing.T) {
 	}
 	emptyDrifts := ConvertToDrifts(emptyResult)
 	assert.Equal(t, 0, len(emptyDrifts), "Expected empty drift slice")
+}
+
+func TestDetectDrift_NilInstances_WithErrorCategory(t *testing.T) {
+	// Test with nil AWS instance
+	_, errAWS := DetectDrift(nil, &models.InstanceDetails{}, nil)
+	assert.Error(t, errAWS, "Expected error for nil AWS instance")
+	assert.True(t, IsErrorCategory(errAWS, ErrInvalidInput), "Expected ErrInvalidInput error category")
+
+	// Test with nil Terraform instance
+	_, errTF := DetectDrift(&models.InstanceDetails{}, nil, nil)
+	assert.Error(t, errTF, "Expected error for nil Terraform instance")
+	assert.True(t, IsErrorCategory(errTF, ErrInvalidInput), "Expected ErrInvalidInput error category")
+}
+
+func TestDetectDrift_UnsupportedAttribute(t *testing.T) {
+	awsInstance := &models.InstanceDetails{
+		InstanceID:   "i-12345",
+		InstanceType: "t2.micro",
+	}
+	tfInstance := &models.InstanceDetails{
+		InstanceType: "t2.micro",
+	}
+
+	// Try to check an attribute that doesn't exist
+	_, err := DetectDrift(awsInstance, tfInstance, []string{"nonexistent_attribute"})
+
+	// Should return an error with the correct category
+	assert.Error(t, err, "Expected error for unsupported attribute")
+	assert.True(t, IsErrorCategory(err, ErrResourceMissing), "Expected ErrResourceMissing error category")
+}
+
+func TestDriftError_Error(t *testing.T) {
+	// Test error with attribute
+	err1 := NewDriftError(ErrComparisonFailed, "test message", "instance_type", nil)
+	expected1 := "comparison_failed: test message (attribute: instance_type)"
+	assert.Equal(t, expected1, err1.Error(), "Error message doesn't match expected format")
+
+	// Test error without attribute
+	err2 := NewDriftError(ErrInvalidInput, "test message", "", nil)
+	expected2 := "invalid_input: test message"
+	assert.Equal(t, expected2, err2.Error(), "Error message doesn't match expected format")
+}
+
+func TestDriftError_Unwrap(t *testing.T) {
+	cause := fmt.Errorf("root cause")
+	err := NewDriftError(ErrInvalidInput, "wrapper", "", cause)
+
+	assert.Equal(t, cause, err.Unwrap(), "Unwrap should return the underlying error")
+}
+
+func TestIsErrorCategory(t *testing.T) {
+	// Direct error
+	err1 := NewDriftError(ErrInvalidInput, "test message", "", nil)
+	assert.True(t, IsErrorCategory(err1, ErrInvalidInput), "Should identify correct category")
+	assert.False(t, IsErrorCategory(err1, ErrComparisonFailed), "Should not match wrong category")
+
+	// Wrapped error
+	cause := fmt.Errorf("root cause")
+	innerErr := NewDriftError(ErrComparisonFailed, "inner", "attr", cause)
+	outerErr := fmt.Errorf("outer wrapper: %w", innerErr)
+
+	assert.True(t, IsErrorCategory(outerErr, ErrComparisonFailed), "Should find category in wrapped error")
+	assert.False(t, IsErrorCategory(outerErr, ErrInvalidInput), "Should not match wrong category in wrapped error")
+
+	// Nil error
+	assert.False(t, IsErrorCategory(nil, ErrInvalidInput), "Should return false for nil error")
+
+	// Regular error
+	regularErr := fmt.Errorf("regular error")
+	assert.False(t, IsErrorCategory(regularErr, ErrInvalidInput), "Should return false for regular error")
 }

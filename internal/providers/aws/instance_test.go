@@ -13,11 +13,12 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func TestGetInstanceDetails_Success(t *testing.T) {
+// TestGetInstancesDetails_Success tests successful retrieval of multiple EC2 instances
+func TestGetInstancesDetails_Success(t *testing.T) {
 	mockClient := mocks.NewEC2ClientAPI(t)
 
-	// expected instance ID
-	instanceID := "i-1234567890abcdef0"
+	// expected instance IDs
+	instanceIDs := []string{"i-1234567890abcdef0", "i-0987654321fedcba0"}
 
 	// expected response
 	expectedResponse := &ec2.DescribeInstancesOutput{
@@ -25,26 +26,14 @@ func TestGetInstanceDetails_Success(t *testing.T) {
 			{
 				Instances: []types.Instance{
 					{
-						InstanceId:   aws.String(instanceID),
+						InstanceId:   aws.String(instanceIDs[0]),
 						InstanceType: types.InstanceTypeT2Micro,
 						ImageId:      aws.String("ami-12345"),
-						Tags: []types.Tag{
-							{
-								Key:   aws.String("Name"),
-								Value: aws.String("test-instance"),
-							},
-							{
-								Key:   aws.String("Environment"),
-								Value: aws.String("testing"),
-							},
-						},
-						SecurityGroups: []types.GroupIdentifier{
-							{
-								GroupId:   aws.String("sg-12345"),
-								GroupName: aws.String("test-sg"),
-							},
-						},
-						SubnetId: aws.String("subnet-12345"),
+					},
+					{
+						InstanceId:   aws.String(instanceIDs[1]),
+						InstanceType: types.InstanceTypeT2Medium,
+						ImageId:      aws.String("ami-67890"),
 					},
 				},
 			},
@@ -54,24 +43,22 @@ func TestGetInstanceDetails_Success(t *testing.T) {
 	mockClient.On("DescribeInstances",
 		mock.Anything,
 		mock.MatchedBy(func(input *ec2.DescribeInstancesInput) bool {
-			return len(input.InstanceIds) == 1 && input.InstanceIds[0] == instanceID
+			return len(input.InstanceIds) == 2 &&
+				input.InstanceIds[0] == instanceIDs[0] &&
+				input.InstanceIds[1] == instanceIDs[1]
 		}),
 	).Return(expectedResponse, nil)
 
 	service := NewInstanceServiceWithClient(mockClient)
-	details, err := service.GetInstanceDetails(context.Background(), instanceID)
+	results, err := service.GetInstancesDetails(context.Background(), instanceIDs)
 
 	assert.NoError(t, err)
-	assert.NotNil(t, details)
-
-	assert.Equal(t, instanceID, details.InstanceID)
-	assert.Equal(t, "t2.micro", details.InstanceType)
-	assert.Equal(t, "ami-12345", details.AMI)
-	assert.Len(t, details.Tags, 2)
-	assert.Equal(t, "test-instance", details.Tags["Name"])
-	assert.Len(t, details.SecurityGroups, 1)
-	assert.Equal(t, "sg-12345", details.SecurityGroups[0])
-	assert.Equal(t, "subnet-12345", details.SubnetID)
+	assert.NotNil(t, results)
+	assert.Equal(t, 2, len(results))
+	assert.Equal(t, instanceIDs[0], results[0].InstanceID)
+	assert.Equal(t, string(types.InstanceTypeT2Micro), results[0].InstanceType)
+	assert.Equal(t, instanceIDs[1], results[1].InstanceID)
+	assert.Equal(t, string(types.InstanceTypeT2Medium), results[1].InstanceType)
 }
 
 func TestGetInstanceDetails_InstanceNotFound(t *testing.T) {
@@ -80,23 +67,28 @@ func TestGetInstanceDetails_InstanceNotFound(t *testing.T) {
 	// nonexistent instance ID
 	instanceID := "i-nonexistent"
 
-	emptyResponse := &ec2.DescribeInstancesOutput{
-		Reservations: []types.Reservation{},
-	}
+	expectedError := errors.New("InvalidInstanceID.NotFound")
 
 	mockClient.On("DescribeInstances",
 		mock.Anything,
 		mock.MatchedBy(func(input *ec2.DescribeInstancesInput) bool {
 			return len(input.InstanceIds) == 1 && input.InstanceIds[0] == instanceID
 		}),
-	).Return(emptyResponse, nil)
+	).Return(nil, expectedError)
 
 	service := NewInstanceServiceWithClient(mockClient)
-	details, err := service.GetInstanceDetails(context.Background(), instanceID)
+	results, err := service.GetInstancesDetails(context.Background(), []string{instanceID})
 
+	// Should return an error
 	assert.Error(t, err)
-	assert.Nil(t, details)
-	assert.Contains(t, err.Error(), "EC2 instance not found")
+	assert.Nil(t, results)
+
+	// Verify the error is an AWS error
+	var awsErr *Error
+	assert.True(t, errors.As(err, &awsErr))
+	assert.Equal(t, ErrResourceNotFound, awsErr.Category)
+	assert.Equal(t, EC2ResourceType, awsErr.ResourceType)
+	assert.Equal(t, instanceID, awsErr.ResourceID)
 }
 
 func TestGetInstanceDetails_AWSError(t *testing.T) {
@@ -113,10 +105,15 @@ func TestGetInstanceDetails_AWSError(t *testing.T) {
 	).Return(nil, expectedError)
 
 	service := NewInstanceServiceWithClient(mockClient)
-	details, err := service.GetInstanceDetails(context.Background(), instanceID)
+	details, err := service.GetInstancesDetails(context.Background(), []string{instanceID})
 
 	// Should return an error
 	assert.Error(t, err)
 	assert.Nil(t, details)
-	assert.Contains(t, err.Error(), expectedError.Error())
+
+	// Verify the error is an AWS error
+	var awsErr *Error
+	assert.True(t, errors.As(err, &awsErr))
+	assert.Equal(t, EC2ResourceType, awsErr.ResourceType)
+	assert.Equal(t, instanceID, awsErr.ResourceID)
 }

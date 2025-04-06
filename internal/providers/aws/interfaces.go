@@ -19,5 +19,5 @@ type EC2ClientAPI interface {
 //
 //go:generate mockery --name=InstanceServiceAPI --output=./mocks
 type InstanceServiceAPI interface {
-	GetInstanceDetails(ctx context.Context, instanceID string) (*models.InstanceDetails, error)
+	GetInstancesDetails(ctx context.Context, instanceIDs []string) ([]*models.InstanceDetails, error)
 }

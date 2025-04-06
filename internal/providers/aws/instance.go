@@ -12,46 +12,109 @@ import (
 	"driftdetector/internal/models"
 )
 
+const (
+	// EC2ResourceType is the AWS resource type for EC2 instances
+	EC2ResourceType = "EC2Instance"
+	// maxIDsPerRequest is the maximum number of instance IDs that can be requested in a single API call
+	maxIDsPerRequest = 10
+)
+
 // InstanceService handles interactions with AWS EC2 instances
 type InstanceService struct {
 	client EC2ClientAPI
 }
 
-// NewInstanceServiceWithDefaultConfig creates a new InstanceService with the default AWS SDK configuration
+// NewInstanceServiceWithDefaultConfig creates a new InstanceService with the default AWS SDK configuration.
+// It loads AWS credentials and region information from the environment, config files, or instance metadata.
 func NewInstanceServiceWithDefaultConfig(ctx context.Context) (*InstanceService, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("unable to load AWS SDK config: %w", err)
+		return nil, NewAWSError(
+			ErrConfigurationError,
+			"AWS",
+			"",
+			"unable to load AWS SDK config",
+			err,
+		)
 	}
 
 	return NewInstanceServiceWithClient(ec2.NewFromConfig(cfg)), nil
 }
 
-// NewInstanceServiceWithClient creates a new InstanceService with a provided client
+// NewInstanceServiceWithClient creates a new InstanceService with a provided client.
+// This is useful for testing and dependency injection.
 func NewInstanceServiceWithClient(client EC2ClientAPI) *InstanceService {
 	return &InstanceService{
 		client: client,
 	}
 }
 
-// GetInstanceDetails retrieves the details of an EC2 instance by ID.
-func (s *InstanceService) GetInstanceDetails(ctx context.Context, instanceID string) (*models.InstanceDetails, error) {
+// GetInstancesDetails retrieves details for multiple EC2 instances in a single API call.
+// This is more efficient than making separate calls for each instance.
+func (s *InstanceService) GetInstancesDetails(ctx context.Context, instanceIDs []string) ([]*models.InstanceDetails, error) {
+	if len(instanceIDs) == 0 {
+		return nil, NewAWSError(
+			ErrInvalidInput,
+			EC2ResourceType,
+			"",
+			"at least one instance ID must be provided",
+			nil,
+		)
+	}
+
+	allInstances := make([]*models.InstanceDetails, 0, len(instanceIDs))
+	// Process in batches
+	for i := 0; i < len(instanceIDs); i += maxIDsPerRequest {
+		end := i + maxIDsPerRequest
+		if end > len(instanceIDs) {
+			end = len(instanceIDs)
+		}
+		batch := instanceIDs[i:end]
+
+		// Make the API call for this batch
+		instances, err := s.getInstancesBatch(ctx, batch)
+		if err != nil {
+			return nil, err // Error already wrapped in getInstancesBatch
+		}
+
+		allInstances = append(allInstances, instances...)
+	}
+
+	return allInstances, nil
+}
+
+// getInstancesBatch retrieves a batch of instances (up to 50) in a single API call
+func (s *InstanceService) getInstancesBatch(ctx context.Context, instanceIDs []string) ([]*models.InstanceDetails, error) {
 	resp, err := s.client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-		InstanceIds: []string{instanceID},
+		InstanceIds: instanceIDs,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to describe EC2 instance %s: %w", instanceID, err)
+		// For better error messages, use just the ID if there's only one
+		resourceID := fmt.Sprintf("one or more of the following: %v", instanceIDs)
+		if len(instanceIDs) == 1 {
+			resourceID = instanceIDs[0]
+		}
+
+		// Wrap the AWS error with our custom error type
+		return nil, ClassifyAWSError(err, EC2ResourceType, resourceID)
 	}
 
-	// Ensure we got exactly one reservation with one instance
-	if len(resp.Reservations) == 0 || len(resp.Reservations[0].Instances) == 0 {
-		return nil, fmt.Errorf("EC2 instance not found: %s", instanceID)
+	// Process all instances in all reservations
+	var instances []*models.InstanceDetails
+	for _, reservation := range resp.Reservations {
+		for _, instance := range reservation.Instances {
+			details := convertInstanceToModel(instance)
+			instances = append(instances, details)
+		}
 	}
 
-	instance := resp.Reservations[0].Instances[0]
+	return instances, nil
+}
 
-	// Convert to domain model
-	// I could maintain a separate model for the AWS SDK response, but I prefer to keep it simple
+// convertInstanceToModel converts an AWS EC2 instance to our domain model
+func convertInstanceToModel(instance types.Instance) *models.InstanceDetails {
+	instanceID := aws.ToString(instance.InstanceId)
+
 	details := &models.InstanceDetails{
 		InstanceID:   instanceID,
 		InstanceType: string(instance.InstanceType),
@@ -67,12 +130,12 @@ func (s *InstanceService) GetInstanceDetails(ctx context.Context, instanceID str
 		}
 	}
 
-	// Add subnet IDs
+	// Add subnet ID
 	if instance.SubnetId != nil {
 		details.SubnetID = aws.ToString(instance.SubnetId)
 	}
 
-	return details, nil
+	return details
 }
 
 // convertTags converts AWS SDK tags to a map

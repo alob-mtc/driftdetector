@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 	"text/tabwriter"
 )
 
@@ -26,7 +27,14 @@ type DriftReport struct {
 
 // PrintReport prints the drift report for a given instance using the specified output format.
 // Supported formats: "json" (machine-readable) and "table" (human-friendly).
-func PrintReport(instanceID string, drifts []models.DriftDetail, outputFormat OutputFormatType) error {
+func PrintReport(writeCoordinator *sync.Mutex, instanceID string, drifts []models.DriftDetail, outputFormat OutputFormatType) error {
+	// Acquire the mutex lock before writing to stdout.
+	// This is to ensure that multiple goroutines do not write to stdout at the same time, which can affect the output order.
+	// Since we care about the order of the output (especially for Table format), writeCoordinator help to synchronise write operation,
+	// which preserve the integrity of our table output
+	writeCoordinator.Lock()
+	defer writeCoordinator.Unlock()
+
 	report := DriftReport{
 		InstanceID: instanceID,
 		Drifts:     drifts,
@@ -93,9 +101,18 @@ func formatValueForTable(v any) string {
 }
 
 // DefaultPrinter is the default implementation of the report printer
-type DefaultPrinter struct{}
+type DefaultPrinter struct {
+	writeCoordinator *sync.Mutex
+}
+
+// NewDefaultPrinter creates a new DefaultPrinter instance
+func NewDefaultPrinter() DefaultPrinter {
+	return DefaultPrinter{
+		writeCoordinator: &sync.Mutex{},
+	}
+}
 
 // PrintReport implements the printer interface
 func (p DefaultPrinter) PrintReport(instanceID string, drifts []models.DriftDetail, format OutputFormatType) error {
-	return PrintReport(instanceID, drifts, format)
+	return PrintReport(p.writeCoordinator, instanceID, drifts, format)
 }

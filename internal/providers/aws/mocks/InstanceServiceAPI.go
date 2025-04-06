@@ -14,29 +14,29 @@ type InstanceServiceAPI struct {
 	mock.Mock
 }
 
-// GetInstanceDetails provides a mock function with given fields: ctx, instanceID
-func (_m *InstanceServiceAPI) GetInstanceDetails(ctx context.Context, instanceID string) (*models.InstanceDetails, error) {
-	ret := _m.Called(ctx, instanceID)
+// GetInstancesDetails provides a mock function with given fields: ctx, instanceIDs
+func (_m *InstanceServiceAPI) GetInstancesDetails(ctx context.Context, instanceIDs []string) ([]*models.InstanceDetails, error) {
+	ret := _m.Called(ctx, instanceIDs)
 
 	if len(ret) == 0 {
-		panic("no return value specified for GetInstanceDetails")
+		panic("no return value specified for GetInstancesDetails")
 	}
 
-	var r0 *models.InstanceDetails
+	var r0 []*models.InstanceDetails
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string) (*models.InstanceDetails, error)); ok {
-		return rf(ctx, instanceID)
+	if rf, ok := ret.Get(0).(func(context.Context, []string) ([]*models.InstanceDetails, error)); ok {
+		return rf(ctx, instanceIDs)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, string) *models.InstanceDetails); ok {
-		r0 = rf(ctx, instanceID)
+	if rf, ok := ret.Get(0).(func(context.Context, []string) []*models.InstanceDetails); ok {
+		r0 = rf(ctx, instanceIDs)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*models.InstanceDetails)
+			r0 = ret.Get(0).([]*models.InstanceDetails)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = rf(ctx, instanceID)
+	if rf, ok := ret.Get(1).(func(context.Context, []string) error); ok {
+		r1 = rf(ctx, instanceIDs)
 	} else {
 		r1 = ret.Error(1)
 	}

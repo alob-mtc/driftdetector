@@ -5,6 +5,7 @@ import (
 	"driftdetector/internal/models"
 	"io"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -38,7 +39,7 @@ func TestPrintReport_JSON(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		err := report.PrintReport(instanceID, drifts, report.OutputFormatTypeJSON)
+		err := report.PrintReport(&sync.Mutex{}, instanceID, drifts, report.OutputFormatTypeJSON)
 		assert.NoError(t, err, "unexpected error")
 	})
 
@@ -58,7 +59,7 @@ func TestPrintReport_Table(t *testing.T) {
 	}
 
 	output := captureOutput(func() {
-		err := report.PrintReport(instanceID, drifts, report.OutputFormatTypeTABLE)
+		err := report.PrintReport(&sync.Mutex{}, instanceID, drifts, report.OutputFormatTypeTABLE)
 		assert.NoError(t, err, "unexpected error")
 	})
 
@@ -79,7 +80,7 @@ func TestPrintReport_InvalidFormat(t *testing.T) {
 		},
 	}
 
-	err := report.PrintReport(instanceID, drifts, "invalid")
+	err := report.PrintReport(&sync.Mutex{}, instanceID, drifts, "invalid")
 	assert.Error(t, err, "expected error for invalid output format")
 }
 
@@ -97,7 +98,7 @@ func TestFormatValueForTable(t *testing.T) {
 	}
 
 	nilOutput := captureOutput(func() {
-		_ = report.PrintReport("test", nilTest, report.OutputFormatTypeTABLE)
+		_ = report.PrintReport(&sync.Mutex{}, "test", nilTest, report.OutputFormatTypeTABLE)
 	})
 
 	assert.Contains(t, nilOutput, "<nil>", "Nil value should be formatted as '<nil>'")
@@ -112,7 +113,7 @@ func TestFormatValueForTable(t *testing.T) {
 	}
 
 	emptyOutput := captureOutput(func() {
-		_ = report.PrintReport("test", emptyTest, report.OutputFormatTypeTABLE)
+		_ = report.PrintReport(&sync.Mutex{}, "test", emptyTest, report.OutputFormatTypeTABLE)
 	})
 
 	assert.Contains(t, emptyOutput, "<empty>", "Empty string should be formatted as '<empty>'")

@@ -61,8 +61,8 @@ func NewDefaultService(config Config) (*Service, error) {
 	return NewService(
 		config,
 		awsService,
-		terraform.DefaultParser{},
-		report.DefaultPrinter{},
+		terraform.NewDefaultParser(),
+		report.NewDefaultPrinter(),
 		logger,
 	), nil
 }
@@ -105,51 +105,50 @@ func (s *Service) parseTerrformConfig() (*models.InstanceDetails, error) {
 // processAllInstances handles the concurrent processing of all instances and result collection.
 // It returns the results and any error that occurred during processing.
 func (s *Service) processAllInstances(ctx context.Context, tfConfig *models.InstanceDetails) ([]DriftDetectionResult, error) {
+	// Fetch AWS instance details
+	awsInstance, err := s.fetchAWSInstanceDetails(ctx, s.config.InstanceIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	s.logger.Info("Fetched %d AWS instances", len(awsInstance))
+
 	// Create a new error group for concurrent processing
-	g, gctx := errgroup.WithContext(ctx)
+	g, _ := errgroup.WithContext(ctx)
 
 	// Set the concurrency limit if specified to avoid overwhelming the AWS API
 	if s.config.ConcurrencyLimit > 0 {
 		g.SetLimit(s.config.ConcurrencyLimit)
 	}
 
-	// Channel to collect results from individual goroutines
-	resultChan := make(chan DriftDetectionResult, len(s.config.InstanceIDs))
+	// Channel to collect processed results from individual goroutines
+	driftReportChan := make(chan DriftDetectionResult)
+	// Channel to submit final aggregated results
+	resultChan := make(chan []DriftDetectionResult)
+
+	// Consumer worker ready to aggregate results from driftReportChan
+	go func() {
+		// Submit final result to the result channel
+		resultChan <- s.collectResults(driftReportChan)
+	}()
 
 	// Start a goroutine for each instance using the error group
-	for _, instanceID := range s.config.InstanceIDs {
+	for _, instance := range awsInstance {
 		// Add the task to the error group
+		// Since the error Group "Go" method is blocking depending on the ConcurrencyLimit set
+		// it's important that the consumer worker is started before the producer
 		g.Go(func() error {
 			// Process this instance
-			result := s.processInstance(gctx, instanceID, tfConfig)
-
-			// Send the result through the channel
-			select {
-			case resultChan <- result:
-				// Result sent successfully
-				return nil
-			case <-gctx.Done():
-				// Context was cancelled, typically due to timeout or cancellation
-				return gctx.Err()
-			}
+			driftReportChan <- s.processInstance(instance, tfConfig)
+			return nil
 		})
 	}
 
 	// Wait for all tasks to complete in a separate goroutine
-	go func() {
-		_ = g.Wait() // Ignore any errors for now, we'll check them after collecting results
-		close(resultChan)
-	}()
+	_ = g.Wait()           // Ignore any errors since we report errors via the
+	close(driftReportChan) // Close the channel to signal completion to the consumer
 
-	// Collect results from the channel
-	results := s.collectResults(resultChan)
-
-	// Check if there were any errors in the error group
-	if err := g.Wait(); err != nil {
-		return results, fmt.Errorf("error in concurrent drift detection: %w", err)
-	}
-
-	return results, nil
+	return <-resultChan, nil
 }
 
 // collectResults gathers results from the result channel.
@@ -181,16 +180,9 @@ func (s *Service) anyErrorsOccurred(results []DriftDetectionResult) bool {
 }
 
 // processInstance handles drift detection for a single instance.
-func (s *Service) processInstance(ctx context.Context, instanceID string, tfConfig *models.InstanceDetails) DriftDetectionResult {
+func (s *Service) processInstance(awsInstance *models.InstanceDetails, tfConfig *models.InstanceDetails) DriftDetectionResult {
 	result := DriftDetectionResult{
-		InstanceID: instanceID,
-	}
-
-	// Fetch AWS instance details
-	awsInstance, err := s.fetchAWSInstanceDetails(ctx, instanceID)
-	if err != nil {
-		result.Error = err
-		return result
+		InstanceID: awsInstance.InstanceID,
 	}
 
 	// Detect drift between AWS and Terraform configurations
@@ -204,20 +196,20 @@ func (s *Service) processInstance(ctx context.Context, instanceID string, tfConf
 	result.Result = driftResult
 
 	// Generate individual report for this instance
-	if err := s.generateInstanceReport(instanceID, driftResult); err != nil {
+	if err := s.generateInstanceReport(awsInstance.InstanceID, driftResult); err != nil {
 		result.Error = fmt.Errorf("error generating report: %w", err)
 	}
 
 	return result
 }
 
-// fetchAWSInstanceDetails retrieves the current state of an instance from AWS.
-func (s *Service) fetchAWSInstanceDetails(ctx context.Context, instanceID string) (*models.InstanceDetails, error) {
-	awsInstance, err := s.awsSrv.GetInstanceDetails(ctx, instanceID)
+// fetchAWSInstanceDetails retrieves the current state of instances from AWS.
+func (s *Service) fetchAWSInstanceDetails(ctx context.Context, instanceIDs []string) ([]*models.InstanceDetails, error) {
+	awsInstances, err := s.awsSrv.GetInstancesDetails(ctx, instanceIDs)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching AWS instance details: %w", err)
 	}
-	return awsInstance, nil
+	return awsInstances, nil
 }
 
 // detectInstanceDrift checks for differences between the actual AWS instance state
