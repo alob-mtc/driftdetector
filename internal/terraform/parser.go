@@ -32,7 +32,6 @@ func NewParserWithLogger(logger logging.Logger) *DefaultParser {
 
 // ParseHCLConfig parses an HCL configuration file and extracts the details of the first aws_instance resource found.
 func (p DefaultParser) ParseHCLConfig(configPath string) (*models.InstanceDetails, error) {
-	p.logger.Debug("Parsing HCL configuration file: %s", configPath)
 	parser := hclparse.NewParser()
 	file, diags := parser.ParseHCLFile(configPath)
 

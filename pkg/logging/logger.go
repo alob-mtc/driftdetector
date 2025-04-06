@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 )
 
 // LogLevel defines the severity of the message
@@ -92,8 +91,7 @@ func (l *DefaultLogger) SetLevel(level LogLevel) {
 
 // log formats and writes a log message
 func (l *DefaultLogger) log(level, format string, args ...interface{}) {
-	timestamp := time.Now().Format("2006/01/02 15:04:05")
 	message := fmt.Sprintf(format, args...)
-	logLine := fmt.Sprintf("[%s] %s: %s\n", timestamp, level, message)
+	logLine := fmt.Sprintf("[%s]: %s\n", level, message)
 	fmt.Fprint(l.writer, logLine)
 }

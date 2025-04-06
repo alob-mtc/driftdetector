@@ -32,6 +32,9 @@ The application can be run in various ways depending on your requirements:
 
 # Specify attributes to check
 ./driftdetector --instance-ids i-xxxxxxxxxxxxxxxxx --config-path ./configs/sample.tf --attributes instance_type,tags,security_groups
+
+# Run in verbose mode
+./driftdetector --instance-ids i-xxxxxxxxxxxxxxxxx --config-path ./configs/sample.tf --verbose
 ```
 
 ### Command-line Arguments
@@ -62,7 +65,21 @@ go test -cover ./...
 # Generate HTML coverage report
 go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
+
+# Run integration tests
+./test/run_integration_tests.sh
 ```
+
+### Test Organization
+
+The test structure is organized as follows:
+
+- **Unit Tests**: Located alongside the code they test
+- **Integration Tests**: Located in the `test/` directory
+  - Tests end-to-end workflows
+  - Uses build tags (`//go:build integration`) to separate from unit tests
+  - Test data is stored in `test/testdata/`
+  - Run these with the `-tags=integration` flag
 
 ### Mocking Dependencies
 
@@ -97,6 +114,7 @@ The drift detector follows these key principles:
    - `/reporting`: Implements drift reporting logic
    - `/orchestrator`: Coordinates the workflow between components
    - `/models`: Defines shared data structures (domain models)
+   - `/pkg/logging`: Handles logging
    - Each package includes dedicated mocks directory for testing (e.g., `internal/providers/aws/mocks`)
 
 2. **Testability**: The code uses dependency injection and interfaces to facilitate testing. Mock implementations are used extensively in unit tests.
@@ -108,6 +126,8 @@ The drift detector follows these key principles:
 ## Key Design Decisions
 
 1. **AWS SDK Choice**: I chose AWS SDK for Go v2 for improved performance and better context-aware API design.
+   - **Bulk AWS API Operations**: Leveraged AWS DescribeInstances' support for bulk queries. Bulk-fetching the instance as opposed to getting them 1 by 1 which is very good for performance.
+   - Also introduced batching to minimize the chance of throttling that can be called by abusing the bulk-fetch feature of the AWS API.
 
 2. **Terraform Parsing**: I utilized HashiCorp's HCL library for parsing Terraform configuration files. This gives direct access to the configuration structure without having to run Terraform commands.
 
@@ -122,16 +142,16 @@ The drift detector follows these key principles:
    - Table-driven tests for comprehensive coverage
    - The `testify/assert` package for readable test assertions
 
-5. **Error Handling**: I used wrapped errors (`fmt.Errorf` with `%w`) to provide context while preserving the original error information. With regards to errors there's more that can be done here but i've decided to keep it simple. For example deifining custom error type is one idea that can be explored here, but i consiously choose to keep it simple.
+5. **Error Handling**: I used wrapped errors (`fmt.Errorf` with `%w`) to provide context while preserving the original error information. 
 
-6. **Concurrency Model**: I implemented Go's `errgroup` package to manage concurrent instance checks with proper error propagation and context cancellation.
+6. **Concurrency Model**: I implemented Go's `errgroup` package to manage concurrent instance checks.
 
 ## Challenges Faced
 
-1. **HCL Parsing Complexity**: Terraform's HCL format has a complex structure that can be challenging to parse correctly. I had to carefully handle different resource types, attribute formats, and nested blocks.
+1. **Drift Detection Algorithm** Complexity: The drift detection algorithm needed to handle various data types and structures, including nested maps and lists. I had to ensure that the comparison logic was robust enough to handle these complexities while remaining efficient. 
+Also coming up with a design that is easy to extend with very minimal/no change to the core logic was a challenge of its own I had to figure out.
 
-2. **AWS API Limitations**: AWS API has rate limits that can be hit when checking many instances. My solution was to implement concurrency controls to limit the number of simultaneous API calls. 
-> I discovered that AWS DescribeInstances supports bulk-actions, but chose not to utilize this initially to keep things simple. This approach works well for moderate-sized deployments while maintaining code clarity. For large-scale deployments (hundreds of instances), bulk operations could be implemented without significant architectural changes.
+> The bulk of the task is a lot of research and experimentation. which was fun
 
 ## Sample Data
 
@@ -146,14 +166,13 @@ The drift detector follows these key principles:
 
 - **Additional Output Formats**: Implement YAML and colorized console output options.
 
-- **AWS API Retry Logic**: Implement exponential backoff and retry mechanisms for AWS API calls.
-
 - **Multi-Resource Support**: Extend drift detection to other AWS resources beyond EC2 instances (e.g., Security Groups, IAM Roles, S3 Buckets).
 
 - **Tag-Based Filtering**: Add ability to select instances for checking based on tags rather than instance IDs.
 
-- **Custom Error Types**: Define specific error types for different failure scenarios.
+- **Custom Error Types**: I added a couple customer error type mostly for AWS since there is more error variant there and I saw the benefit of implementing this here it improved my bugging time. (I could also extend this to a lot more of the module)
 
-- **Bulk AWS API Operations**: Leverage AWS DescribeInstances' support for bulk queries. Bulk-fetching the instance as opposed to getting this 1 by 1 like I do (there's not significant draw back to my current approach) however if the uses case is to explore a large set of ec2 instances, then bulk-actions is definitely the way to go here.
-
-- **Attribute Enum System**: Implement an enumeration system for attribute names.
+- **Attribute Enum System**: Implement an enumeration system for attribute names. (I could also extend this to a lot more of the module)
+  - This would help with type safety and reduce the risk of typos in attribute names.
+  - It would also make it easier to add new attributes support in the future.
+- **Logging Improvements**: Extend debug logging support to other module like AWS. 

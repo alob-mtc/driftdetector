@@ -57,11 +57,15 @@ func NewDefaultService(config Config) (*Service, error) {
 	}
 
 	logger := logging.NewDefaultLogger()
+	// Set the logger level based on the verbose flag
+	if config.Verbose {
+		logger.SetLevel(logging.DEBUG)
+	}
 
 	return NewService(
 		config,
 		awsService,
-		terraform.NewDefaultParser(),
+		terraform.NewParserWithLogger(logger),
 		report.NewDefaultPrinter(),
 		logger,
 	), nil
@@ -69,6 +73,8 @@ func NewDefaultService(config Config) (*Service, error) {
 
 // Run executes the drift detection workflow for all instances
 func (s *Service) Run(ctx context.Context) (bool, bool, error) {
+	s.logger.Info("Starting drift detection workflow")
+	s.logger.Debug("Configuration: %+v", s.config)
 	// Validate configuration
 	if err := s.validateConfig(); err != nil {
 		return false, true, err
@@ -105,6 +111,7 @@ func (s *Service) parseTerrformConfig() (*models.InstanceDetails, error) {
 // processAllInstances handles the concurrent processing of all instances and result collection.
 // It returns the results and any error that occurred during processing.
 func (s *Service) processAllInstances(ctx context.Context, tfConfig *models.InstanceDetails) ([]DriftDetectionResult, error) {
+	s.logger.Debug("Fetching AWS instance details for %d instances", len(s.config.InstanceIDs))
 	// Fetch AWS instance details
 	awsInstance, err := s.fetchAWSInstanceDetails(ctx, s.config.InstanceIDs)
 	if err != nil {
@@ -137,16 +144,20 @@ func (s *Service) processAllInstances(ctx context.Context, tfConfig *models.Inst
 		// Add the task to the error group
 		// Since the error Group "Go" method is blocking depending on the ConcurrencyLimit set
 		// it's important that the consumer worker is started before the producer
+		s.logger.Debug("Queuing drift detection for instance %s", instance.InstanceID)
 		g.Go(func() error {
+			s.logger.Debug("Processing instance %s", instance.InstanceID)
 			// Process this instance
 			driftReportChan <- s.processInstance(instance, tfConfig)
 			return nil
 		})
 	}
 
+	s.logger.Debug("Waiting for all instance processing to complete")
 	// Wait for all tasks to complete in a separate goroutine
 	_ = g.Wait()           // Ignore any errors since we report errors via the
 	close(driftReportChan) // Close the channel to signal completion to the consumer
+	s.logger.Debug("All instance processing completed")
 
 	return <-resultChan, nil
 }
@@ -186,6 +197,7 @@ func (s *Service) processInstance(awsInstance *models.InstanceDetails, tfConfig 
 	}
 
 	// Detect drift between AWS and Terraform configurations
+	s.logger.Debug("Comparing AWS state with Terraform configuration for instance %s", awsInstance.InstanceID)
 	driftResult, err := s.detectInstanceDrift(awsInstance, tfConfig)
 	if err != nil {
 		result.Error = err
@@ -274,7 +286,7 @@ func (s *Service) generateSummaryReport(results []DriftDetectionResult) {
 	// Only generate a summary if more than one instance was checked
 	// For a single instance, the detailed report is sufficient
 	if len(results) > 1 {
-		s.logger.Info("\nSummary: Checked %d instances, %d with drift, %d with errors",
+		s.logger.Info("Summary: Checked %d instances, %d with drift, %d with errors",
 			len(results),
 			countDrifts(results),
 			errCount,

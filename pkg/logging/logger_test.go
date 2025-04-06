@@ -115,9 +115,6 @@ func TestLogFormatting(t *testing.T) {
 	logger.Info("Test message with %s", "formatting")
 	output := buf.String()
 
-	// Check timestamp format is present
-	assert.Contains(t, output, "[20", "Should contain timestamp prefix")
-
 	// Check log level is present
 	assert.Contains(t, output, "INFO", "Should contain log level")
 

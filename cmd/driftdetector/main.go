@@ -9,18 +9,17 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	
+
 	"driftdetector/internal/orchestrator"
 )
 
 func main() {
-	fmt.Println("Drift Detector starting...")
-
 	var instanceIDs string
 	var configPath string
 	var attributesToCheck string
 	var outputFormat string
 	var concurrencyLimit int
+	var verbose bool
 
 	rootCmd := &cobra.Command{
 		Use:   "driftdetector",
@@ -55,6 +54,7 @@ func main() {
 				AttributesToCheck: attrSlice,
 				OutputFormat:      outputFormat,
 				ConcurrencyLimit:  concurrencyLimit,
+				Verbose:           verbose,
 			}
 
 			// Create orchestrator service
@@ -86,6 +86,7 @@ func main() {
 	rootCmd.Flags().StringVar(&attributesToCheck, "attributes", "", "Comma-separated list of attributes to check for drift (e.g., instance_type,tags)")
 	rootCmd.Flags().StringVar(&outputFormat, "output", "table", "Output format: table or json")
 	rootCmd.Flags().IntVar(&concurrencyLimit, "concurrency", runtime.NumCPU(), "Maximum number of instances to check concurrently (default: number of CPU cores)")
+	rootCmd.Flags().BoolVar(&verbose, "verbose", false, "Enable verbose/debug output")
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)

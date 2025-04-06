@@ -296,7 +296,7 @@ func TestGenerateSummaryReport(t *testing.T) {
 	// First, expect an error log for the instance with an error
 	loggerMock.On("Error", "Instance %s: Error - %s", "i-2", expectedErr).Return()
 	// Then, expect a summary info log with the drift and error statistics
-	loggerMock.On("Info", "\nSummary: Checked %d instances, %d with drift, %d with errors",
+	loggerMock.On("Info", "Summary: Checked %d instances, %d with drift, %d with errors",
 		3, 1, 1).Return()
 
 	// Run the function being tested

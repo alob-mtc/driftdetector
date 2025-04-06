@@ -9,6 +9,7 @@ type Config struct {
 	AttributesToCheck []string // List of attributes to check for drift
 	OutputFormat      string   // Output format (json or table)
 	ConcurrencyLimit  int      // Maximum number of concurrent instance checks (0 = unlimited)
+	Verbose           bool     // Enable verbose output
 }
 
 // DriftDetectionResult contains the result of a drift detection for a single instance.
