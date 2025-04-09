@@ -65,9 +65,6 @@ go test -cover ./...
 # Generate HTML coverage report
 go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
-
-# Run integration tests
-./test/run_integration_tests.sh
 ```
 
 ### Test Organization
