@@ -72,11 +72,6 @@ go tool cover -html=coverage.out
 The test structure is organized as follows:
 
 - **Unit Tests**: Located alongside the code they test
-- **Integration Tests**: Located in the `test/` directory
-  - Tests end-to-end workflows
-  - Uses build tags (`//go:build integration`) to separate from unit tests
-  - Test data is stored in `test/testdata/`
-  - Run these with the `-tags=integration` flag
 
 ### Mocking Dependencies
 
